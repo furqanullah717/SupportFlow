@@ -26,11 +26,11 @@ TEMPLATES = [{
     'DIRS': [BASE_DIR / 'templates'], 'APP_DIRS': True,
     'OPTIONS': {'context_processors': [
         'django.template.context_processors.request', 'django.contrib.auth.context_processors.auth',
-        'django.contrib.messages.context_processors.messages',
+        'django.contrib.messages.context_processors.messages', 'desk.context_processors.workspace_context',
     ]},
 }]
 WSGI_APPLICATION = 'supportflow.wsgi.application'
-DATABASES = {'default': dj_database_url.parse(os.environ.get('DATABASE_URL', f'sqlite:///{BASE_DIR / "db.sqlite3"}'), conn_max_age=60)}
+DATABASES = {'default': dj_database_url.parse(os.environ.get('SUPPORTFLOW_DATABASE_URL', f'sqlite:///{BASE_DIR / "db.sqlite3"}'), conn_max_age=60)}
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
@@ -67,3 +67,6 @@ AI_PROVIDER = os.environ.get('AI_PROVIDER', 'demo')
 AI_API_KEY = os.environ.get('AI_API_KEY', '')
 AI_MODEL = os.environ.get('AI_MODEL', '')
 AI_BASE_URL = os.environ.get('AI_BASE_URL', '')
+
+DEMO_MODE = os.environ.get('DEMO_MODE', 'true' if DEBUG else 'false').lower() == 'true'
+CSRF_FAILURE_VIEW = 'desk.views.csrf_failure'

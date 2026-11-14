@@ -5,6 +5,7 @@ from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
+from desk.services import feedback_token_for, token_digest
 from desk.models import (
     ActivityEvent, Category, Customer, Membership, Message, Notification,
     SatisfactionResponse, Ticket, Workspace,
@@ -120,9 +121,9 @@ class Command(BaseCommand):
                 Message.objects.filter(pk=reply.pk).update(created_at=resolved_at)
                 if i % 3:
                     score = [5, 5, 4, 5, 4, 5, 3, 5, 4, 2][i % 10]
-                    SatisfactionResponse.objects.create(ticket=ticket, score=score, comment='Thank you for the clear explanation and quick help.' if score >= 4 else 'The issue is fixed, but the response took longer than expected.', submitted_at=min(resolved_at+timedelta(hours=2), now))
+                    SatisfactionResponse.objects.create(ticket=ticket, token=token_digest(feedback_token_for(ticket.pk)), score=score, comment='Thank you for the clear explanation and quick help.' if score >= 4 else 'The issue is fixed, but the response took longer than expected.', submitted_at=min(resolved_at+timedelta(hours=2), now))
                 else:
-                    SatisfactionResponse.objects.create(ticket=ticket)
+                    SatisfactionResponse.objects.create(ticket=ticket, token=token_digest(feedback_token_for(ticket.pk)))
             event = ActivityEvent.objects.create(workspace=workspace, actor=member.user, ticket=ticket, customer=customer, kind='ticket.resolved' if status == 'RESOLVED' else 'ticket.created', description=f'{member.user.get_full_name()} {"resolved" if status == "RESOLVED" else "updated"} ticket #{ticket.number}', changes={'status': status})
             ActivityEvent.objects.filter(pk=event.pk).update(created_at=last_update)
             if i < 8:

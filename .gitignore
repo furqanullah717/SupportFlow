@@ -8,3 +8,5 @@ staticfiles/
 .coverage
 .pytest_cache/
 media/
+.cache/
+artifacts/

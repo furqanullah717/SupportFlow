@@ -216,7 +216,9 @@ def save_customer(member, form):
 @transaction.atomic
 def create_invitation(member, data):
     require_admin(member)
-    email = data["email"].lower()
+    # Match acceptance and access changes: lock the workspace first.
+    Workspace.objects.select_for_update().get(pk=member.workspace_id)
+    email = data["email"].strip().lower()
     if Membership.objects.filter(
         workspace=member.workspace, is_active=True, user__email__iexact=email
     ).exists():
@@ -260,6 +262,13 @@ def update_member(actor, target_id, data):
     target.full_clean()
     target.save()
     if not target.is_active:
+        # Old invitations must not grant access after an administrator removes it.
+        Invitation.objects.filter(
+            workspace=actor.workspace,
+            email__iexact=target.user.email,
+            accepted_at__isnull=True,
+            expires_at__gt=timezone.now(),
+        ).update(expires_at=timezone.now())
         Ticket.objects.filter(
             workspace=actor.workspace, assignee=target, deleted_at__isnull=True
         ).update(assignee=None, revision=models_f_revision())
@@ -306,8 +315,13 @@ def register_workspace(data):
 @transaction.atomic
 def accept_invitation(raw, user, data=None):
     try:
+        workspace_id = Invitation.objects.values_list("workspace_id", flat=True).get(
+            token=token_digest(raw)
+        )
+        Workspace.objects.select_for_update().get(pk=workspace_id)
+        # Recheck validity under the same workspace lock used by deactivation.
         invite = (
-            Invitation.objects.select_for_update()
+            Invitation.objects.select_for_update(of=("self",))
             .select_related("workspace")
             .get(token=token_digest(raw), accepted_at__isnull=True, expires_at__gt=timezone.now())
         )

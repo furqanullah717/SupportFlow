@@ -35,7 +35,11 @@ def dashboard_data(workspace, days=30):
         .annotate(total=Count("id"))
     )
     resolved = dict(
-        tickets.filter(resolved_at__isnull=False)
+        workspace.tickets.filter(
+            deleted_at__isnull=True,
+            resolved_at__date__gte=start,
+            resolved_at__date__lte=today,
+        )
         .annotate(day=TruncDate("resolved_at", tzinfo=tz))
         .values_list("day")
         .annotate(total=Count("id"))

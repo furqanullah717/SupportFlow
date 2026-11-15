@@ -1,40 +1,30 @@
 # Release review — 2026-11-15
 
-Reviewed implementation commit `8f108a3`. This is a source review, not a completed QA pass. Application source has not changed during this handover.
+The user authorized local execution and testing. Checks run on their Mac with Python 3.13.7 and the project's installed dependencies, against dedicated SupportFlow SQLite databases.
 
-## Release blockers
+## Corrected issues
 
-### Deactivation can be bypassed through an unused invitation
+### Old invitations restored deactivated access
 
-Severity: high. Source-grounded; runtime confirmation pending.
+A regression reproduced this sequence: invite an email twice, accept one invitation, deactivate the member, then accept the unused invitation. Access returned unexpectedly.
 
-1. Invite one email twice before either invitation is accepted.
-2. Accept the first invitation.
-3. As admin, deactivate that member.
-4. As that user, accept the second invitation.
+Deactivation now expires pending invitations for that member. Invitation creation, acceptance and membership changes acquire the workspace lock in the same order. Acceptance rechecks validity after taking the lock. The regression now rejects the old invitation and verifies that a fresh, intentional invitation can restore access with the new role.
 
-`create_invitation` allows multiple pending invitations. `update_member` does not revoke them. `accept_invitation` reactivates an inactive membership with the stored invitation role. Access removal therefore does not reliably revoke old invitations.
+### Resolved chart omitted older tickets
 
-Required correction: revoke pending invitations for a member when deactivating them; serialize membership changes and invitation acceptance consistently. Add a regression proving an old invitation cannot restore removed access, while a fresh intentional invitation can.
+A regression confirmed that a ticket created 40 days ago and resolved today was missing from the 30-day chart. Resolution trends now query nondeleted workspace tickets by resolution date independently of ticket creation date. The test covers older tickets, deleted tickets and workspace isolation.
 
-### Resolved chart omits older tickets
+## Validation
 
-Severity: medium. Source-grounded; runtime confirmation pending.
+- Both regression tests failed for the reported defects before the changes and passed afterward.
+- All 40 automated tests pass on SQLite, including authorization, isolation, concurrency conflicts, surveys and AI failure contracts.
+- Ruff passes. `makemigrations --check --dry-run` reports no changes. Django system checks report no issues.
+- Live HTTP checks pass: login, CSRF enforcement, main page routes, customer and ticket creation, editing, assignment, replies, internal notes, all three demo AI operations, search, resolution, single-use feedback, deletion and agent permission denials.
+- Persistence verified through refetch and a fresh authenticated session. Dashboard 90-day total matches active ticket API count after cleanup. Assignment notifications reach the assigned agent.
+- Corrected app restarted from this session's checkout at http://127.0.0.1:8000/. Fresh sign-in, dashboard, metrics, identity, ticket list and Demo AI smoke checks pass after restart.
 
-1. Create a ticket dated 40 days ago.
-2. Resolve it today.
-3. Select the 30-day dashboard window.
+The live checks create a QA customer and a soft-deleted QA ticket in the demo database. They do not alter unrelated databases. Automated tests use Django's separate test database.
 
-`dashboard_data` derives the resolved series from tickets created inside the period. The resolution is absent. Query resolution timestamps independently from ticket creation timestamps, while preserving workspace isolation and excluding deleted tickets. Add a regression for an older ticket resolved inside the period.
+## Limits
 
-## Scope limits
-
-Replies persist in the workspace. No customer email delivery or inbound email channel exists. Invitations and password reset use configurable email, with console output by default. Remote AI requires provider credentials; demo AI is visibly labeled.
-
-## Validation state
-
-The earlier implementation session reported 38 passing SQLite tests and HTTP workflow checks at `8f108a3`. Those results are historical, not a new run. Final PostgreSQL validation and the complete browser reply workflow were not completed there.
-
-A subsequent QA session recorded a declined full-suite/lint command (approval request `hir_4d5aeacd52944547a0661d4aeb5ab533`). This handover preserves that refusal and requests fresh authorization before running those checks. Do not describe QA as complete until permission is granted, the issues are reproduced and corrected, and critical flows pass.
-
-GET `http://127.0.0.1:8000/health/` returned 200 during this handover. The existing local demo server remains available. Documentation files and code fences were checked, and `git diff --check` passed.
+PostgreSQL has not been rerun on this machine. Remote AI credentials and SMTP delivery are not exercised. Replies persist inside the workspace; outbound customer email and inbound email ingestion are not implemented. Visual checks on rendered snapshots do not prove live browser form submission.

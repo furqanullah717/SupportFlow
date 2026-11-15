@@ -8,23 +8,31 @@ from .models import SatisfactionResponse, Ticket
 def dashboard_data(workspace, days=30):
     today = timezone.localdate()
     start = today - timedelta(days=days - 1)
-    tickets = workspace.tickets.filter(deleted_at__isnull=True, created_at__date__gte=start)
-    counts = dict(tickets.values_list("status").annotate(total=Count("id")))
+    live = workspace.tickets.filter(deleted_at__isnull=True)
+    # Created in the period: volume and first response time.
+    tickets = live.filter(created_at__date__gte=start)
+    # Resolved in the period: resolution and satisfaction metrics.
+    resolved_in_period = live.filter(status="RESOLVED", resolved_at__date__gte=start)
+    # Status counts describe the current backlog, matching the ticket list filters.
+    counts = dict(live.values_list("status").annotate(total=Count("id")))
     duration = ExpressionWrapper(
         F("first_response_at") - F("created_at"), output_field=DurationField()
     )
     average = tickets.filter(first_response_at__isnull=False).aggregate(value=Avg(duration))[
         "value"
     ]
-    feedback = SatisfactionResponse.objects.filter(ticket__in=tickets, submitted_at__isnull=False)
+    feedback = SatisfactionResponse.objects.filter(
+        ticket__in=live, submitted_at__date__gte=start, score__isnull=False
+    )
     count = feedback.count()
     metrics = {
         "total": tickets.count(),
         "open": counts.get("OPEN", 0),
         "in_progress": counts.get("IN_PROGRESS", 0),
         "pending": counts.get("PENDING", 0),
-        "resolved": counts.get("RESOLVED", 0),
-        "response_time": average.total_seconds() / 60 if average else None,
+        "resolved": resolved_in_period.count(),
+        "status_total": sum(counts.values()),
+        "response_time": average.total_seconds() / 60 if average is not None else None,
         "csat": 100 * feedback.filter(score__gte=4).count() / count if count else None,
         "csat_count": count,
     }
@@ -35,11 +43,7 @@ def dashboard_data(workspace, days=30):
         .annotate(total=Count("id"))
     )
     resolved = dict(
-        workspace.tickets.filter(
-            deleted_at__isnull=True,
-            resolved_at__date__gte=start,
-            resolved_at__date__lte=today,
-        )
+        resolved_in_period.filter(resolved_at__date__lte=today)
         .annotate(day=TruncDate("resolved_at", tzinfo=tz))
         .values_list("day")
         .annotate(total=Count("id"))
@@ -74,8 +78,8 @@ def dashboard_data(workspace, days=30):
             {
                 "member": member,
                 "assigned": own.count(),
-                "resolved": own.filter(status="RESOLVED").count(),
-                "response_time": response.total_seconds() / 60 if response else None,
+                "resolved": resolved_in_period.filter(assignee=member).count(),
+                "response_time": response.total_seconds() / 60 if response is not None else None,
             }
         )
     colors = ["#3d89bf", "#7367d8", "#c2943e", "#389777"]
@@ -85,8 +89,8 @@ def dashboard_data(workspace, days=30):
             "label": label,
             "value": counts.get(key, 0),
             "color": colors[i],
-            "percentage": round(counts.get(key, 0) / metrics["total"] * 100, 2)
-            if metrics["total"]
+            "percentage": round(counts.get(key, 0) / metrics["status_total"] * 100, 2)
+            if metrics["status_total"]
             else 0,
         }
         for i, (key, label) in enumerate(Ticket.Status.choices)

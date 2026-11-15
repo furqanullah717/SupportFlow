@@ -22,6 +22,7 @@ def resolve_membership(request, required=True):
         if membership:
             request.session["workspace_id"] = membership.workspace_id
             try:
+                # desk.middleware.reset_timezone deactivates this after the response.
                 timezone.activate(ZoneInfo(membership.workspace.timezone))
             except ZoneInfoNotFoundError:
                 timezone.activate("UTC")

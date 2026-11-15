@@ -280,7 +280,7 @@ class Command(BaseCommand):
                 ticket=ticket,
                 customer=customer,
                 kind="ticket.resolved" if status == "RESOLVED" else "ticket.created",
-                description=f"{member.user.get_full_name()} {'resolved' if status == 'RESOLVED' else 'updated'} ticket #{ticket.number}",
+                description=f"{'resolved' if status == 'RESOLVED' else 'created'} ticket SF-{ticket.number}",
                 changes={"status": status},
             )
             ActivityEvent.objects.filter(pk=event.pk).update(created_at=last_update)

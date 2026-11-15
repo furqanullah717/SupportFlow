@@ -13,7 +13,7 @@ from . import forms, services
 from .analytics import dashboard_data
 from .context_processors import resolve_membership
 from .models import Customer, Membership, Ticket
-from .views import run_ai, selected_days, ticket_queryset
+from .views import run_ai, search_text, selected_days, ticket_queryset
 
 
 def error_response(error):
@@ -240,7 +240,7 @@ def customers(request):
     if request.method == "GET":
         from django.db.models import Q
 
-        q = request.GET.get("q", "")[:200]
+        q = search_text(request.GET)
         return paged(
             request,
             request.membership.workspace.customers.filter(

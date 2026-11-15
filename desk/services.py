@@ -35,7 +35,9 @@ def token_digest(token):
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def record_event(workspace, actor, kind, description, ticket=None, customer=None, changes=None):
+def record_event(
+    workspace, actor, kind, description, ticket=None, customer=None, changes=None, notify=()
+):
     event = ActivityEvent(
         workspace=workspace,
         actor=actor,
@@ -48,9 +50,8 @@ def record_event(workspace, actor, kind, description, ticket=None, customer=None
     event.full_clean()
     event.save()
     recipients = workspace.memberships.filter(is_active=True).exclude(user=actor)
-    recipients = recipients.filter(role="admin") | recipients.filter(
-        pk=ticket.assignee_id if ticket else None
-    )
+    involved = [ticket.assignee_id] if ticket else []
+    recipients = recipients.filter(role="admin") | recipients.filter(pk__in=[*involved, *notify])
     for member in recipients.distinct():
         Notification.objects.get_or_create(recipient=member, event=event)
     return event
@@ -120,13 +121,15 @@ def update_ticket(member, ticket_id, data):
     )
     check_revision(ticket, data.get("revision"))
     changes = {}
-    previous_status = ticket.status
+    previous_status, previous_assignee = ticket.status, ticket.assignee_id
     for key in ["customer", "subject", "description", "status", "priority", "assignee", "category"]:
         if key in data:
             old, value = getattr(ticket, key), data[key]
             if old != value:
                 changes[key] = {"from": str(old or ""), "to": str(value or "")}
                 setattr(ticket, key, value)
+    if not changes:
+        return ticket
     if ticket.status != previous_status:
         ticket.resolved_at = timezone.now() if ticket.status == Ticket.Status.RESOLVED else None
     ticket.revision += 1
@@ -137,10 +140,11 @@ def update_ticket(member, ticket_id, data):
         member.workspace,
         member.user,
         "ticket.updated",
-        f"updated ticket SF-{ticket.number}",
+        f"updated {', '.join(changes)} on SF-{ticket.number}",
         ticket=ticket,
         customer=ticket.customer,
         changes=changes,
+        notify=[previous_assignee] if previous_assignee else [],
     )
     return ticket
 

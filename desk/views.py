@@ -1,10 +1,11 @@
 """Workspace-scoped pages and public account workflows."""
 
 import hashlib
+import re
 from functools import wraps
 from django.conf import settings as django_settings
 from django.contrib import messages
-from django.contrib.auth import login as auth_login
+from django.contrib.auth import login as auth_login, logout as auth_logout
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.views import LoginView
@@ -29,7 +30,10 @@ def scoped(view):
     @login_required
     @wraps(view)
     def wrapped(request, *args, **kwargs):
-        resolve_membership(request)
+        if resolve_membership(request, required=False) is None:
+            auth_logout(request)
+            messages.error(request, "Your account no longer has access to a workspace.")
+            return redirect("login")
         return view(request, *args, **kwargs)
 
     return wrapped
@@ -50,19 +54,31 @@ def selected_days(request):
     )
 
 
+def search_text(params):
+    # NUL bytes are rejected by PostgreSQL text parameters.
+    return str(params.get("q", ""))[:200].replace("\x00", "").strip()
+
+
+def record_id(value):
+    """Return a positive ASCII integer that fits every database integer column, else None."""
+    value = str(value or "")
+    return int(value) if value.isascii() and value.isdigit() and len(value) <= 9 else None
+
+
 def ticket_queryset(member, params):
     qs = member.workspace.tickets.filter(deleted_at__isnull=True).select_related(
         "customer", "assignee__user", "category"
     )
-    q = str(params.get("q", ""))[:200].strip()
+    q = search_text(params)
     if q:
         match = (
             Q(subject__icontains=q)
             | Q(customer__name__icontains=q)
             | Q(customer__email__icontains=q)
         )
-        if q.replace("SF-", "").replace("#", "").isdigit():
-            match |= Q(number=int(q.replace("SF-", "").replace("#", "")))
+        number = record_id(re.sub(r"^(sf-|#)", "", q, flags=re.IGNORECASE))
+        if number is not None:
+            match |= Q(number=number)
         qs = qs.filter(match)
     if params.get("status") in Ticket.Status.values:
         qs = qs.filter(status=params["status"])
@@ -70,8 +86,10 @@ def ticket_queryset(member, params):
         qs = qs.filter(priority=params["priority"])
     if params.get("assignee") == "unassigned":
         qs = qs.filter(assignee__isnull=True)
-    elif str(params.get("assignee", "")).isdigit():
-        qs = qs.filter(assignee_id=params["assignee"])
+    elif record_id(params.get("assignee")) is not None:
+        qs = qs.filter(assignee_id=record_id(params["assignee"]))
+    if record_id(params.get("category")) is not None:
+        qs = qs.filter(category_id=record_id(params["category"]))
     sort = params.get("sort", "newest")
     if sort == "priority":
         qs = qs.annotate(
@@ -172,7 +190,11 @@ def ticket_list(request):
 
 @scoped
 def ticket_create(request):
-    form = forms.ScopedTicketForm(request.POST or None, workspace=request.membership.workspace)
+    form = forms.ScopedTicketForm(
+        request.POST or None,
+        initial={"customer": record_id(request.GET.get("customer"))},
+        workspace=request.membership.workspace,
+    )
     if request.method == "POST" and form.is_valid():
         try:
             ticket = services.create_ticket(request.membership, form.cleaned_data)
@@ -238,6 +260,9 @@ def ticket_edit(request, pk):
             messages.success(request, "Ticket updated.")
             return redirect("ticket_detail", pk=pk)
         except (services.DomainError, ValidationError) as error:
+            if getattr(error, "code", None) == "conflict":
+                messages.error(request, str(error))
+                return redirect("ticket_edit", pk=pk)
             form_error(form, error)
             status = getattr(error, "status", 400)
     return generic_form(
@@ -259,6 +284,9 @@ def ticket_update(request, pk):
             messages.success(request, "Ticket details saved.")
             return redirect("ticket_detail", pk=pk)
         except (services.DomainError, ValidationError) as error:
+            if getattr(error, "code", None) == "conflict":
+                messages.error(request, str(error))
+                return redirect("ticket_detail", pk=pk)
             form_error(form, error)
             status = getattr(error, "status", 400)
     return render(
@@ -285,10 +313,13 @@ def ticket_reply(request, pk):
         except (services.DomainError, ValidationError) as error:
             form_error(form, error)
             status = getattr(error, "status", 400)
+    ticket = ticket_for(request, pk)
+    form.data = form.data.copy()
+    form.data["revision"] = ticket.revision
     return render(
         request,
         "desk/ticket_detail.html",
-        detail_context(request, ticket_for(request, pk), message_form=form),
+        detail_context(request, ticket, message_form=form),
         status=status,
     )
 
@@ -351,7 +382,7 @@ def ticket_ai(request, pk):
 @scoped
 @require_GET
 def customer_list(request):
-    q = request.GET.get("q", "")[:200]
+    q = search_text(request.GET)
     qs = request.membership.workspace.customers.filter(
         Q(name__icontains=q) | Q(email__icontains=q) | Q(company__icontains=q)
     )
@@ -455,9 +486,9 @@ def member_update(request, pk):
             services.update_member(request.membership, pk, form.cleaned_data)
             messages.success(request, "Team access updated.")
         except services.DomainError as error:
-            return HttpResponse(str(error), status=error.status)
+            messages.error(request, str(error))
     else:
-        return HttpResponse("Invalid team role.", status=400)
+        messages.error(request, "Choose a valid team role.")
     return redirect("team")
 
 

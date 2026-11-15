@@ -152,7 +152,7 @@ class BackendTests(TestCase):
         response = self.client.post(
             f"/team/{self.member.pk}/", {"role": "agent", "is_active": "on"}
         )
-        self.assertEqual(response.status_code, 400)
+        self.assertRedirects(response, "/team/")
         self.member.refresh_from_db()
         self.assertEqual(self.member.role, "admin")
 

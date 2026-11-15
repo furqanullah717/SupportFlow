@@ -248,6 +248,8 @@ h3 {
   color:#9b9da6}
 .breadcrumb-divider {
   color:#c1c2cb}
+span>.breadcrumb-divider {
+  margin:0 8px}
 .topbar-actions {
   display:flex;
   align-items:center;
@@ -655,6 +657,7 @@ h3 {
   font-weight:500;
   white-space:nowrap}
 .table-scroll {
+  position:relative;
   overflow-x:auto}
 table {
   width:100%;
@@ -1491,7 +1494,7 @@ tbody tr:hover {
   padding-left:14px;
   padding-right:14px}
 .team-layout {
-  grid-template-columns:1fr}
+  grid-template-columns:minmax(0,1fr)}
 .invite-panel {
   max-width:600px}
 .ticket-layout {
@@ -1520,12 +1523,12 @@ tbody tr:hover {
 .heading-actions {
   flex-wrap:wrap;
   justify-content:flex-end}
-.topbar-workspace,.breadcrumb-divider:first-of-type {
+.topbar-workspace,.topbar-left>.breadcrumb-divider {
   display:none}
 .global-search input {
   width:130px}
 .ticket-layout {
-  grid-template-columns:1fr}
+  grid-template-columns:minmax(0,1fr)}
 .ticket-sidebar {
   display:grid;
   grid-template-columns:1fr 1fr;
@@ -1583,7 +1586,7 @@ tbody tr:hover {
 .dashboard-charts {
   grid-template-columns:1.6fr 1fr}
 .profile-layout {
-  grid-template-columns:1fr}
+  grid-template-columns:minmax(0,1fr)}
 .profile-layout>.panel {
   display:grid;
   grid-template-columns:1fr 1fr;
@@ -1617,8 +1620,6 @@ tbody tr:hover {
   display:none}
 .topbar-left {
   font-size:10px}
-.topbar-left>.breadcrumb-divider {
-  display:none}
 .main-content {
   padding:22px 16px 0}
 .page-heading {
@@ -1852,6 +1853,7 @@ td { font-size: 12px; color: #525c6b; }
 @media (max-height: 800px) { .sidebar-tip { display: none; } }
 @media (max-width: 560px) {
   .chart-column:nth-child(2n) > span { visibility: hidden; }
+  .chart-column:first-child > span { align-self: flex-start; }
   .heading-actions { width: 100%; }
   .metrics-grid { gap: 10px; }
   .metric-card { padding: 13px; }
